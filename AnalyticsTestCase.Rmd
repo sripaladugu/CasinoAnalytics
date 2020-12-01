@@ -1,0 +1,98 @@
+---
+title: "AnalyticsTestCase"
+author: "Sri"
+date: "12/1/2020"
+output: html_document
+---
+
+Loading Libraries
+
+```{r}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(cowplot)
+library("factoextra")
+library("FactoMineR")
+```
+
+```{r}
+selected_features <- c("IGHV3.23_CD4-Neg-IGH", "TRBV20.1_CD4-Pos-TRB", "TRBJ2.1_CD4-Neg-TRB", "TRBV10.3:TRBJ2.2_CD4-Neg-TRB", "TRBV3.1:TRBJ2.5_CD4-Pos-TRB", "TRDV2:TRDJ1_CD4-Neg-TRD", "TRBV6.4:TRBJ2.1_CD4-Neg-TRB")
+datalist = list()
+root.dir <- "./"
+cnames <- c("sample_id", "feature", "WHO_grouped", "totalCloneFraction", "age", "gender")
+i <- 1
+for (fname in list.files(path = root.dir, pattern = "*features_adjPvalue_WHO_grouped.tsv")) {
+    temp <- read.table( paste0(root.dir, fname), sep="\t", header = TRUE )
+    names(temp) <- cnames
+    temp <- temp %>% group_by(feature) %>% mutate(normalized_cf = scale(totalCloneFraction))
+    datalist[[i]] <- temp
+    i <- i + 1
+}
+clonefraction_df = do.call(rbind, datalist)
+cnames <- c("sample_id", "feature", "WHO_grouped", "totalCloneFraction", "age", "gender", "normalized_cf")
+names(clonefraction_df) <- cnames
+clonefraction_df$WHO_grouped <- factor(clonefraction_df$WHO_grouped, levels = c("","Healthy","Mild","Moderate","Severe","Deceased"))
+clonefraction_df <- clonefraction_df %>% filter(!(WHO_grouped %in% c("")))
+clonefraction_df <- clonefraction_df %>% filter(feature %in% selected_features)
+p.box <- ggplot(clonefraction_df, aes(x=feature, y=normalized_cf, fill=WHO_grouped)) +
+           geom_boxplot() + scale_fill_brewer(palette = "Spectral") +
+           theme(text = element_text(size=12, face="bold"), 
+                 plot.title = element_text(hjust = 0.5),
+                 axis.text.x = element_text(size=9, angle = 90, vjust = 0.5, hjust=1))
+p.box
+
+```
+
+```{r}
+datalist = list()
+root.dir <- "./"
+cnames <- c("sample_id", "feature", "cresp_var", "totalCloneFraction", "age", "gender")
+i <- 1
+for (fname in list.files(path = root.dir, pattern = "*features_adjPvalue.tsv")) {
+    temp <- read.table( paste0(root.dir, fname), sep="\t", header = TRUE )
+    names(temp) <- cnames
+    temp <- temp %>% group_by(feature) %>% mutate(normalized_cf = scale(totalCloneFraction))
+    datalist[[i]] <- temp
+    i <- i + 1
+}
+clonefraction_df = do.call(rbind, datalist)
+cnames <- c("sample_id", "feature", "cresp_var", "totalCloneFraction", "age", "gender", "normalized_cf")
+names(clonefraction_df) <- cnames
+clonefraction_df <- clonefraction_df %>% filter(feature %in% selected_features)
+p.box <- ggplot(clonefraction_df, aes(x=feature, y=normalized_cf, fill=cresp_var)) +
+           geom_boxplot() + scale_fill_brewer(palette = "Spectral") +
+           theme(text = element_text(size=12, face="bold"), 
+                 plot.title = element_text(hjust = 0.5),
+                 axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+p.box
+
+```
+
+```{r}
+tidy_cfdf <- clonefraction_df %>% select(sample_id, cresp_var, feature, totalCloneFraction) %>% spread(feature, totalCloneFraction) %>% filter(sample_id != "p093n01") %>% select(-c(sample_id))
+cfdf_pca <- PCA(tidy_cfdf[, -1],  graph = FALSE)
+pca_ind_plot <- fviz_pca_ind(cfdf_pca,
+             label = "none", # hide individual labels
+             col.ind = unlist(tidy_cfdf["cresp_var"]), # color by groups
+             palette = viridis(2),
+             addEllipses = TRUE, # Concentration ellipses
+             ellipse.level = 0.68,
+             legend.title = "HealthStatus",
+             ggtheme = theme_gray()
+             )
+pca_screeplot <- fviz_screeplot(cfdf_pca, addlabels = TRUE, ylim = c(0, 50))
+# Control variable colors using their contributions
+pca_var_plot <- fviz_pca_var(cfdf_pca, col.var="contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             )
+# Contributions of variables to PC1
+dim1_contrib_plot <- fviz_contrib(cfdf_pca, choice = "var", axes = 1, top = 10)
+# Contributions of variables to PC2
+dim2_contrib_plot <- fviz_contrib(cfdf_pca, choice = "var", axes = 2, top = 10)
+  
+multi_plots <- plot_grid(pca_ind_plot, pca_screeplot, dim1_contrib_plot, dim2_contrib_plot, pca_var_plot, nrow=3)
+multi_plots
+```
